@@ -842,11 +842,46 @@ exports.init = init;
                 return response.json();
             }
 
+            function replaceHtmlWithLoadingOverlay(plainHTML) {
+                const loadingStyle = `
+                    <style id="staticrypt-transition-loader-style">
+                        #staticrypt-transition-loader {
+                            position: fixed; inset: 0; z-index: 2147483647;
+                            display: grid; place-items: center; background: #fff;
+                            opacity: 1; transition: opacity 180ms ease;
+                        }
+                        #staticrypt-transition-loader.is-hidden { opacity: 0; pointer-events: none; }
+                        #staticrypt-transition-loader::after {
+                            content: ""; width: 2rem; height: 2rem; border: .25rem solid #888;
+                            border-right-color: transparent; border-radius: 50%;
+                            animation: staticrypt-transition-spin .75s linear infinite;
+                        }
+                        @keyframes staticrypt-transition-spin { to { transform: rotate(360deg); } }
+                    </style>`;
+                const loadingMarkup = '<div id="staticrypt-transition-loader" role="status" aria-label="Loading"></div>';
+                const removeLoadingScript = `<script>
+                    window.addEventListener("load", function () {
+                        const loader = document.getElementById("staticrypt-transition-loader");
+                        if (!loader) return;
+                        loader.classList.add("is-hidden");
+                        window.setTimeout(() => loader.remove(), 200);
+                    });
+                <\/script>`;
+
+                let htmlWithLoader = plainHTML.replace(/<head\b[^>]*>/i, `$&${loadingStyle}`);
+                htmlWithLoader = htmlWithLoader.replace(/<body\b[^>]*>/i, `$&${loadingMarkup}`);
+                htmlWithLoader = htmlWithLoader.replace(/<\/body>/i, `${removeLoadingScript}</body>`);
+
+                document.open();
+                document.write(htmlWithLoader);
+                document.close();
+            }
+
             // you can edit these values to customize some of the behavior of StatiCrypt
             const templateConfig = {
                 rememberExpirationKey: "staticrypt_expiration",
                 rememberPassphraseKey: "staticrypt_passphrase",
-                replaceHtmlCallback: null,
+                replaceHtmlCallback: replaceHtmlWithLoadingOverlay,
                 clearLocalStorageCallback: null,
             };
 
@@ -906,12 +941,17 @@ exports.init = init;
             document.getElementById("staticrypt-form").addEventListener("submit", async function (e) {
                 e.preventDefault();
 
+                document.getElementById("staticrypt_loading").classList.remove("hidden");
+                document.getElementById("staticrypt_content").classList.add("hidden");
+
                 const password = document.getElementById("staticrypt-password").value,
                     isRememberChecked = document.getElementById("staticrypt-remember").checked;
 
                 const { isSuccessful } = await staticrypt.handleDecryptionOfPage(password, isRememberChecked);
 
                 if (!isSuccessful) {
+                    document.getElementById("staticrypt_loading").classList.add("hidden");
+                    document.getElementById("staticrypt_content").classList.remove("hidden");
                     alert(templateError);
                 }
             });
